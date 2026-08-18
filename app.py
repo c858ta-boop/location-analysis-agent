@@ -68,7 +68,7 @@ def clean_to_float(val):
     except:
         return 0.0
 
-# Основная логика приложения (без глобального try-except во избежание SyntaxError)
+# Основная логика приложения
 if file_1 and file_2:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
     
@@ -119,8 +119,8 @@ if file_1 and file_2:
             color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
             
             # Константы стилей для ячеек
-            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
-            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
+            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' # Хорошо для бизнеса
+            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   # Плохо для бизнеса
             
             # Пересчитываем каждую ячейку
             for idx, row in df_result_raw.iterrows():
@@ -133,7 +133,7 @@ if file_1 and file_2:
                     try:
                         val_1 = df_1_indexed.loc[statya, col]
                         if isinstance(val_1, pd.Series):
-                            val_1 = val_1.iloc[0]
+                            val_1 = val_1.iloc
                     except KeyError:
                         val_1 = 0.0
                         
@@ -144,9 +144,11 @@ if file_1 and file_2:
                     
                     if delta > 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
+                        # ЕСЛИ РОСТ ДОХОДОВ (1) -> ЗЕЛЕНЫЙ. ЕСЛИ РОСТ РАСХОДОВ (2) -> КРАСНЫЙ.
                         color_matrix.at[idx, col] = STYLE_GREEN if row_type == "1" else STYLE_RED
                     elif delta < 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
+                        # ЕСЛИ ПАДЕНИЕ ДОХОДОВ (1) -> КРАСНЫЙ. ЕСЛИ ПАДЕНИЕ РАСХОДОВ (2) -> ЗЕЛЕНЫЙ.
                         color_matrix.at[idx, col] = STYLE_RED if row_type == "1" else STYLE_GREEN
                     else:
                         df_result.at[idx, col] = f"{val_2_float:,.2f}"
@@ -188,10 +190,6 @@ if file_1 and file_2:
                     cell_style = "padding: 6px; text-align: right;"
                     
                     if "(+" in cell_text:
+                        # Исправлено: РОСТ ДОХОДОВ (1) -> ЗЕЛЕНЫЙ, РОСТ РАСХОДОВ (2) -> КРАСНЫЙ
                         cell_style += " background-color: #D1FAE5; color: #065F46;" if r_type == "1" else " background-color: #FEE2E2; color: #991B1B;"
                     elif "(-" in cell_text:
-                        cell_style += " background-color: #FEE2E2; color: #991B1B;" if r_type == "1" else " background-color: #D1FAE5; color: #065F46;"
-                        
-                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>\n"
-                html_preview += "</tr>\n"
-                
