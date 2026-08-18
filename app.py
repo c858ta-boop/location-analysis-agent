@@ -107,14 +107,21 @@ if file_1 and file_2:
             numeric_cols = [col for col in df_2.columns if col != target_column and col in df_1.columns and not str(col).startswith('Unnamed:')]
             
             # Создаем каркас результирующей таблицы на основе Файла 2
-            df_result = df_2[[target_column] + numeric_cols].copy()
+            df_result_raw = df_2[[target_column] + numeric_cols].copy()
+            
+            # ЗАЩИТА ТИПОВ ДАННЫХ: Принудительно переводим все столбцы, кроме ключевого, в тип 'object' (строки)
+            # Это позволит без ошибок записывать текст со знаками '+' и '-' прямо в ячейки
+            df_result = df_result_raw.copy()
+            for col in numeric_cols:
+                df_result[col] = df_result[col].astype(object)
+                
             df_1_indexed = df_1.set_index(target_column)
             
             # Матрица цветов для отображения в Streamlit
             color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
             
             # Пересчитываем каждую ячейку
-            for idx, row in df_result.iterrows():
+            for idx, row in df_result_raw.iterrows():
                 statya = row[target_column]
                 
                 for col in numeric_cols:
