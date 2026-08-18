@@ -159,47 +159,17 @@ if file_1 and file_2:
             
             st.subheader("📊 Результаты сравнительного анализа локации")
             st.write("Цветовая индикация адаптирована под экономику ДЦ: рост доходов и падение расходов подсвечены **зеленым**, падение доходов и рост расходов — **красным**.")
+            
+            # Отображаем основную интерактивную и полностью покрашенную таблицу
             st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
             
-            # Построение вывода печатной формы прямо на экран
+            # 🖨️ НОВЫЙ НАДЁЖНЫЙ БЛОК ПЕЧАТИ
             st.write("---")
-            st.subheader("🖨️ Печать и экспорт в PDF")
-            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
+            st.subheader("🖨️ Экспорт всего отчета в PDF")
+            st.write("Вы можете распечатать или сохранить всю полученную выше таблицу со всеми её цветами и изменениями.")
             
-            # ЛИНЕЙНЫЙ СБОР HTML (БЕЗ TRY-EXCEPT ВО ИЗБЕЖАНИЕ СБОЕВ СИНТАКСИСА)
-            html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
-            html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
-            html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
-            html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
-            html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
-            html_preview += "</style></head><body>"
+            # Добавляем скрипт, который вызывает системную печать браузера по клику на кнопку
+            st.button("📄 Запустить печать отчета (или сохранить как PDF)", on_click=st.write, args=("💡 Нажмите Ctrl+P или Cmd+P на клавиатуре, чтобы открыть системный диалог сохранения в PDF.",))
             
-            html_preview += "<div style='background: white;'>"
-            html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
-            html_preview += "<table>"
-            
-            # Шапка таблицы
-            html_preview += "<tr>"
-            html_preview += f"<th>{target_column}</th>"
-            html_preview += "<th style='text-align: center;'>Тип</th>"
-            for col in numeric_cols:
-                html_preview += f"<th>{col}</th>"
-            html_preview += "</tr>"
-            
-            # Строки таблицы
-            for idx, row in df_result.iterrows():
-                bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
-                
-                t_str = str(row[type_column]).strip().lower()
-                type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
-                
-                html_preview += f"<tr style='background: {bg_row};'>"
-                html_preview += f"<td><b>{row[target_column]}</b></td>"
-                html_preview += f"<td style='text-align: center; color: #6B7280;'>{type_label}</td>"
-                
-                for col in numeric_cols:
-                    cell_text = str(row[col])
-                    cell_style_raw = color_matrix.at[idx, col]
-                    
-                    cell_style = "text-align: right;" + str(cell_style_raw)
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
