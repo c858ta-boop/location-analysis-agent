@@ -69,6 +69,46 @@ def clean_to_float(val):
     except:
         return 0.0
 
+def make_color_excel(df, numeric_cols_list, type_col_name):
+    """Отдельная функция для генерации разукрашенного Excel во избежание SyntaxError"""
+    towrite = BytesIO()
+    df.to_excel(towrite, index=False, header=True)
+    towrite.seek(0)
+    
+    wb_export = openpyxl.load_workbook(towrite)
+    ws_export = wb_export.active
+    
+    excel_fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+    excel_fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    
+    # Находим, в каком столбце Excel лежит маркер "Доходы Расходы"
+    type_col_idx = 2
+    for col in range(1, ws_export.max_column + 1):
+        if str(ws_export.cell(row=1, column=col).value).strip() == type_col_name:
+            type_col_idx = col
+            break
+            
+    for r_idx in range(2, ws_export.max_row + 1):
+        type_val_cell = ws_export.cell(row=r_idx, column=type_col_idx).value
+        t_str = str(type_val_cell).strip().lower()
+        row_is_income = "1" in t_str or "доход" in t_str
+        
+        for c_idx in range(1, ws_export.max_column + 1):
+            col_name = str(ws_export.cell(row=1, column=c_idx).value).strip()
+            if col_name in numeric_cols_list:
+                cell_obj = ws_export.cell(row=r_idx, column=c_idx)
+                cell_text = str(cell_obj.value)
+                
+                if "(+" in cell_text:
+                    cell_obj.fill = excel_fill_green if row_is_income else excel_fill_red
+                elif "(-" in cell_text:
+                    cell_obj.fill = excel_fill_red if row_is_income else excel_fill_green
+                    
+    final_output = BytesIO()
+    wb_export.save(final_output)
+    final_output.seek(0)
+    return final_output
+
 # Основная логика приложения
 if file_1 and file_2:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
@@ -76,7 +116,6 @@ if file_1 and file_2:
     pandas_header_index = int(header_row) - 1
     sheet_target = "АФ сокр"
     
-    # Клонируем файлы в независимые буферы памяти для стабильного чтения
     old_bytes = file_1.read()
     new_bytes = file_2.read()
     
@@ -86,7 +125,6 @@ if file_1 and file_2:
     if sheet_target not in xl_1.sheet_names or sheet_target not in xl_2.sheet_names:
         st.error(f"❌ Ошибка: Лист '{sheet_target}' не найден в одном или обоих файлах!")
     else:
-        # Загружаем датафреймы
         df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_target, header=pandas_header_index)
         df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_target, header=pandas_header_index)
         
@@ -98,16 +136,13 @@ if file_1 and file_2:
         elif type_column not in df_2.columns:
             st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Проверьте заголовки.")
         else:
-            # Очищаем от пустых значений и дубликатов
             df_1 = df_1.dropna(subset=[target_column])
             df_2 = df_2.dropna(subset=[target_column])
             df_1[target_column] = df_1[target_column].astype(str).str.strip()
             df_2[target_column] = df_2[target_column].astype(str).str.strip()
             
-            # Находим все числовые столбцы для сравнения
             numeric_cols = [col for col in df_2.columns if col != target_column and col != type_column and col in df_1.columns and not str(col).startswith('Unnamed:')]
             
-            # Создаем каркас результирующей таблицы на основе Файла 2
             df_result_raw = df_2[[target_column, type_column] + numeric_cols].copy()
             df_result = df_result_raw.copy()
             
@@ -115,25 +150,18 @@ if file_1 and file_2:
                 df_result[col] = df_result[col].astype(object)
                 
             df_1_indexed = df_1.set_index(target_column)
-            
-            # Матрица цветов для отображения в Streamlit
             color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
             
-            # Константы стилей для ячеек
             STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
             STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
             
-            # Пересчитываем каждую ячейку
             for idx, row in df_result_raw.iterrows():
                 statya = row[target_column]
-                
-                # Текстовый поиск маркера
                 raw_type_str = str(row[type_column]).strip().lower()
                 is_income = "1" in raw_type_str or "доход" in raw_type_str
                 
                 for col in numeric_cols:
                     val_2 = row[col]
-                    
                     try:
                         val_1 = df_1_indexed.loc[statya, col]
                         if isinstance(val_1, pd.Series):
@@ -143,7 +171,6 @@ if file_1 and file_2:
                         
                     val_2_float = clean_to_float(val_2)
                     val_1_float = clean_to_float(val_1)
-                    
                     delta = val_2_float - val_1_float
                     
                     if delta > 0:
@@ -166,45 +193,14 @@ if file_1 and file_2:
             st.subheader("📥 Экспорт результатов в цветной Excel")
             st.write("Скачайте готовый отчет. Агент автоматически раскрасит ячейки доходов и расходов внутри файла Excel.")
             
-            # 🎨 ЛОГИКА ЦВЕТНОЙ СБОРКИ EXCEL ЧЕРЕЗ OPENPYXL
-            towrite = BytesIO()
-            
-            # Сначала пишем базовый файл через pandas
-            df_result.to_excel(towrite, index=False, header=True)
-            towrite.seek(0)
-            
-            # Открываем созданный файл в openpyxl для раскраски ячеек
-            wb_export = openpyxl.load_workbook(towrite)
-            ws_export = wb_export.active
-            
-            # Создаем заливки для Excel (используем мягкие пастельные тона)
-            excel_fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
-            excel_fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
-            
-            # Пробегаемся по строкам файла Excel (строка 1 — заголовки, данные со 2-й)
-            for r_idx in range(2, ws_export.max_row + 1):
-                # Нам нужно понять, какой тип у этой строки ("1" или "2")
-                # Столбец "Доходы Расходы" — второй по счету в df_result (индекс 2 в Excel)
-                type_val_cell = ws_export.cell(row=r_idx, column=2).value
-                t_str = str(type_val_cell).strip().lower()
-                row_is_income = "1" in t_str or "доход" in t_str
-                
-                # Проверяем числовые столбцы (начиная с 3-го столбца таблицы Excel)
-                for c_idx in range(3, ws_export.max_column + 1):
-                    cell_obj = ws_export.cell(row=r_idx, column=c_idx)
-                    cell_text = str(cell_obj.value)
-                    
-                    if "(+" in cell_text:
-                        cell_obj.fill = excel_fill_green if row_is_income else excel_fill_red
-                    elif "(-" in cell_text:
-                        cell_obj.fill = excel_fill_red if row_is_income else excel_fill_green
-            
-            # Сохраняем разукрашенную книгу обратно в байты
-            final_output = BytesIO()
-            wb_export.save(final_output)
-            final_output.seek(0)
+            # Безопасный вызов изолированной функции генерации Excel
+            excel_file_data = make_color_excel(df_result, numeric_cols, type_column)
             
             st.download_button(
                 label="🟢 Скачать цветной отчет локации (Excel)",
-                data=final_output,
+                data=excel_file_data,
                 file_name="Location_Analysis_Color_Report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
