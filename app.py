@@ -14,7 +14,7 @@ with st.sidebar:
     target_column = st.text_input("Название столбца со статьями:", value="Статья")
     type_column = st.text_input("Название столбца типа (Доходы/Расходы):", value="Доходы Расходы")
     header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=4)
-    st.caption("ℹ/ Код 1 = Доходы (Рост=Зеленый, Падение=Красный). Код 2 = Расходы (Рост=Красный, Падение=Зеленый).")
+    st.caption("ℹ️ Код 1 = Доходы (Рост=Зеленый, Падение=Красный). Код 2 = Расходы (Рост=Красный, Падение=Зеленый).")
 
 # Блок загрузки файлов
 col1, col2 = st.columns(2)
@@ -119,8 +119,8 @@ if file_1 and file_2:
             color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
             
             # Константы стилей для ячеек
-            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' # Выгода
-            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   # Убыток/Ухудшение
+            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
+            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
             
             # Пересчитываем каждую ячейку
             for idx, row in df_result_raw.iterrows():
@@ -144,14 +144,12 @@ if file_1 and file_2:
                     
                     if delta > 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                        # ИСПРАВЛЕНО: Рост Доходов (1) -> ЗЕЛЕНЫЙ. Рост Расходов (2) -> КРАСНЫЙ.
                         if row_type == "1":
                             color_matrix.at[idx, col] = STYLE_GREEN
                         else:
                             color_matrix.at[idx, col] = STYLE_RED
                     elif delta < 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                        # ИСПРАВЛЕНО: Падение Доходов (1) -> КРАСНЫЙ. Падение Расходов (2) -> ЗЕЛЕНЫЙ.
                         if row_type == "1":
                             color_matrix.at[idx, col] = STYLE_RED
                         else:
@@ -193,8 +191,12 @@ if file_1 and file_2:
                 
                 for col in numeric_cols:
                     cell_text = str(row[col])
-                    cell_style = "padding: 6px; text-align: right;"
-                    
-                    # Прямой перенос стилей из проверенной матрицы без вложенных if-условий
                     cell_style_raw = color_matrix.at[idx, col]
-                    if cell_style_raw:
+                    
+                    # Линейный однострочник без условных операторов во избежание IndentationError
+                    extra_style = f" {cell_style_raw}" if cell_style_raw else ""
+                    cell_style = f"padding: 6px; text-align: right;{extra_style}"
+                        
+                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>\n"
+                html_preview += "</tr>\n"
+                
