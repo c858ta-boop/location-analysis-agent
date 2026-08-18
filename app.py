@@ -62,7 +62,6 @@ def clean_to_float(val):
     if val_str == "" or val_str == "-":
         return 0.0
     try:
-        # Убираем пробелы (включая неразрывные \xa0), заменяем запятые на точки
         val_str = val_str.replace('\xa0', '').replace(' ', '').replace(',', '.')
         return float(val_str)
     except:
@@ -70,123 +69,118 @@ def clean_to_float(val):
 
 # Запуск основного интерфейса только при наличии обоих файлов
 if file_1 and file_2:
-    st.success("Файлы успешно загружены! Начинаю сверку матриц 'АФ сокр'...")
+    st.success("Файлы успешно загружены! Начинаю факторный анализ...")
     
-    try:
+    # Клонируем файлы в независимые буферы памяти для стабильного чтения
+    old_bytes = file_1.read()
+    new_bytes = file_2.read()
+    
+    # Считываем книги
+    wb_old = openpyxl.load_workbook(BytesIO(old_bytes), data_only=True, read_only=True)
+    wb_new = openpyxl.load_workbook(BytesIO(new_bytes), data_only=True, read_only=True)
+    
+    common_sheets = list(set(wb_old.sheetnames).intersection(set(wb_new.sheetnames)))
+    sheet_target = "АФ сокр"
+    
+    if sheet_target not in common_sheets:
+        st.error(f"❌ Ошибка: Лист '{sheet_target}' не найден в одном или обоих файлах!")
+    else:
         pandas_header_index = int(header_row) - 1
-        sheet_target = "АФ сокр"
         
-        # Фиксируем данные файлов в памяти для стабильного чтения
-        bytes_1 = file_1.read()
-        bytes_2 = file_2.read()
+        # Загружаем датафреймы
+        df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_target, header=pandas_header_index)
+        df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_target, header=pandas_header_index)
         
-        xl_1 = pd.ExcelFile(BytesIO(bytes_1))
-        xl_2 = pd.ExcelFile(BytesIO(bytes_2))
+        df_1.columns = [str(c).strip() for c in df_1.columns]
+        df_2.columns = [str(c).strip() for c in df_2.columns]
         
-        if sheet_target not in xl_1.sheet_names or sheet_target not in xl_2.sheet_names:
-            st.error(f"❌ Ошибка: Лист '{sheet_target}' не найден в одном или обоих файлах!")
+        if target_column not in df_1.columns or target_column not in df_2.columns:
+            st.error(f"❌ Столбец '{target_column}' не найден на листе '{sheet_target}'. Проверьте настройки в боковом меню.")
         else:
-            # Загружаем датафреймы через защищенный буфер
-            df_1 = pd.read_excel(BytesIO(bytes_1), sheet_name=sheet_target, header=pandas_header_index)
-            df_2 = pd.read_excel(BytesIO(bytes_2), sheet_name=sheet_target, header=pandas_header_index)
+            # Очищаем от пустых значений и дубликатов
+            df_1 = df_1.dropna(subset=[target_column])
+            df_2 = df_2.dropna(subset=[target_column])
+            df_1[target_column] = df_1[target_column].astype(str).str.strip()
+            df_2[target_column] = df_2[target_column].astype(str).str.strip()
             
-            # Очищаем заголовки от пробелов по краям
-            df_1.columns = [str(c).strip() for c in df_1.columns]
-            df_2.columns = [str(c).strip() for c in df_2.columns]
+            # Находим все числовые столбцы для сравнения
+            numeric_cols = [col for col in df_2.columns if col != target_column and col in df_1.columns and not str(col).startswith('Unnamed:')]
             
-            if target_column not in df_1.columns or target_column not in df_2.columns:
-                st.error(f"❌ Столбец '{target_column}' не найден на листе '{sheet_target}'. Проверьте настройки в боковом меню.")
-            else:
-                # Фильтруем пустые значения в столбце Статья и приводим к чистому строковому виду
-                df_1 = df_1.dropna(subset=[target_column])
-                df_2 = df_2.dropna(subset=[target_column])
-                df_1[target_column] = df_1[target_column].astype(str).str.strip()
-                df_2[target_column] = df_2[target_column].astype(str).str.strip()
+            # Создаем каркас результирующей таблицы на основе Файла 2
+            df_result = df_2[[target_column] + numeric_cols].copy()
+            df_1_indexed = df_1.set_index(target_column)
+            
+            # Матрица цветов для отображения в Streamlit
+            color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
+            
+            # Пересчитываем каждую ячейку
+            for idx, row in df_result.iterrows():
+                statya = row[target_column]
                 
-                # Находим все числовые столбцы для сравнения (все, кроме столбца статьи)
-                numeric_cols = [col for col in df_2.columns if col != target_column and col in df_1.columns and not str(col).startswith('Unnamed:')]
-                
-                # Создаем каркас результирующей таблицы на основе Файла 2
-                df_result = df_2[[target_column] + numeric_cols].copy()
-                
-                # Индексируем файл 1 по статьям для моментального поиска значений
-                df_1_indexed = df_1.set_index(target_column)
-                
-                # Матрица цветов для отображения в Streamlit
-                color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
-                
-                # Пересчитываем каждую ячейку
-                for idx, row in df_result.iterrows():
-                    statya = row[target_column]
-                    
-                    for col in numeric_cols:
-                        val_2 = row[col]
-                        
-                        # Безопасно ищем эту же статью и столбец в Файле 1
-                        try:
-                            val_1 = df_1_indexed.loc[statya, col]
-                            if isinstance(val_1, pd.Series):
-                                val_1 = val_1.iloc[0]
-                        except KeyError:
-                            val_1 = 0.0
-                            
-                        # Очищаем и переводим ячейки в числа через всеядную функцию
-                        val_2_float = clean_to_float(val_2)
-                        val_1_float = clean_to_float(val_1)
-                        
-                        # Считаем разницу: Файл 2 минус Файл 1
-                        delta = val_2_float - val_1_float
-                        
-                        # Форматируем текст ячейки и заносим цвета в матрицу
-                        if delta > 0:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                            color_matrix.at[idx, col] = 'background-color: #D1FAE5; color: #065F46;'  # Светло-зеленый
-                        elif delta < 0:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                            color_matrix.at[idx, col] = 'background-color: #FEE2E2; color: #991B1B;'  # Светло-красный
-                        else:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f}"
-                
-                # Функция стилизации ячеек для Streamlit
-                def style_cells(df):
-                    return color_matrix
-                
-                st.subheader("📊 Результаты сравнительного анализа локации")
-                st.write("В ячейках указано актуальное значение из Файла 2, а в скобках — разница к Файлу 1:")
-                
-                # Выводим покрашенную матрицу на экран директору
-                st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
-                
-                # Построение и вывод печатной формы прямо на экран (как в первом агенте)
-                st.write("---")
-                st.subheader("🖨️ Печать и экспорт в PDF")
-                st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы мгновенно сохранить этот отчет в PDF.")
-                
-                # Формируем HTML-код для красивого окна предпросмотра печати
-                html_preview = "<div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #E5E7EB; border-radius: 5px; background: white;'>"
-                html_preview += "<h2 style='color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0;'>Сокращенный анализ локации (Лист: АФ сокр)</h2>"
-                html_preview += "<table style='width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px;'>"
-                
-                # Заголовки таблицы в HTML
-                html_preview += "<tr style='background: #1E3A8A; color: white;'>"
-                html_preview += f"<th style='padding: 6px; text-align: left;'>{target_column}</th>"
                 for col in numeric_cols:
-                    html_preview += f"<th style='padding: 6px; text-align: right;'>{col}</th>"
+                    val_2 = row[col]
+                    
+                    try:
+                        val_1 = df_1_indexed.loc[statya, col]
+                        if isinstance(val_1, pd.Series):
+                            val_1 = val_1.iloc[0]
+                    except KeyError:
+                        val_1 = 0.0
+                        
+                    val_2_float = clean_to_float(val_2)
+                    val_1_float = clean_to_float(val_1)
+                    
+                    delta = val_2_float - val_1_float
+                    
+                    if delta > 0:
+                        df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
+                        color_matrix.at[idx, col] = 'background-color: #D1FAE5; color: #065F46;'
+                    elif delta < 0:
+                        df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
+                        color_matrix.at[idx, col] = 'background-color: #FEE2E2; color: #991B1B;'
+                    else:
+                        df_result.at[idx, col] = f"{val_2_float:,.2f}"
+            
+            # Функция стилизации ячеек для Streamlit
+            def style_cells(df):
+                return color_matrix
+            
+            st.subheader("📊 Результаты сравнительного анализа локации")
+            st.write("В ячейках указано актуальное значение из Файла 2, а в скобках — разница к Файлу 1:")
+            st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
+            
+            # Построение и вывод печатной формы прямо на экран
+            st.write("---")
+            st.subheader("🖨️ Печать и экспорт в PDF")
+            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы мгновенно сохранить этот отчет в PDF.")
+            
+            html_preview = "<div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #E5E7EB; border-radius: 5px; background: white;'>"
+            html_preview += "<h2 style='color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0;'>Сокращенный анализ локации (Лист: АФ сокр)</h2>"
+            html_preview += "<table style='width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px;'>"
+            html_preview += "<tr style='background: #1E3A8A; color: white;'>"
+            html_preview += f"<th style='padding: 6px; text-align: left;'>{target_column}</th>"
+            for col in numeric_cols:
+                html_preview += f"<th style='padding: 6px; text-align: right;'>{col}</th>"
+            html_preview += "</tr>"
+            
+            for idx, row in df_result.iterrows():
+                bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
+                html_preview += f"<tr style='background: {bg_row}; border-bottom: 1px solid #E5E7EB;'>"
+                html_preview += f"<td style='padding: 6px;'><b>{row[target_column]}</b></td>"
+                
+                for col in numeric_cols:
+                    cell_text = str(row[col])
+                    cell_style = "padding: 6px; text-align: right;"
+                    
+                    if "(+" in cell_text:
+                        cell_style += " background-color: #D1FAE5; color: #065F46;"
+                    elif "(-" in cell_text:
+                        cell_style += " background-color: #FEE2E2; color: #991B1B;"
+                        
+                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>"
                 html_preview += "</tr>"
                 
-                # Строки таблицы в HTML
-                for idx, row in df_result.iterrows():
-                    bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
-                    html_preview += f"<tr style='background: {bg_row}; border-bottom: 1px solid #E5E7EB;'>"
-                    html_preview += f"<td style='padding: 6px;'><b>{row[target_column]}</b></td>"
-                    
-                    for col in numeric_cols:
-                        cell_text = str(row[col])
-                        cell_style = "padding: 6px; text-align: right;"
-                        
-                        # Подкрашиваем текст в HTML-отчете для печати
-                        if "(+" in cell_text:
-                            cell_style += " background-color: #D1FAE5; color: #065F46;"
-                        elif "(-" in cell_text:
-                            cell_style += " background-color: #FEE2E2; color: #991B1B;"
-                            
+            html_preview += "</table></div>"
+            st.components.v1.html(html_preview, height=500, scrolling=True)
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
