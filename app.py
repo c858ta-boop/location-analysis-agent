@@ -119,15 +119,16 @@ if file_1 and file_2:
             color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
             
             # Константы стилей для ячеек
-            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' # Выгода
-            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   # Убыток/Ухудшение
+            STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
+            STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
             
             # Пересчитываем каждую ячейку
             for idx, row in df_result_raw.iterrows():
                 statya = row[target_column]
                 
-                # ВСЕЯДНОЕ ПРИВЕДЕНИЕ ТИПА СТРОКИ: Очищаем от точек, пробелов и кавычек, переводя в чистую строку "1" или "2"
-                raw_type_val = str(row[type_column]).split('.')[0].strip() 
+                # ИСПРАВЛЕНО: Безопасное приведение к числу. Сначала чистим в float, затем берем как строку "1" или "2"
+                row_type_num = clean_to_float(row[type_column])
+                row_type = "1" if row_type_num == 1.0 else "2"
                 
                 for col in numeric_cols:
                     val_2 = row[col]
@@ -146,15 +147,13 @@ if file_1 and file_2:
                     
                     if delta > 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                        # Если тип равен 1 (Доход) -> ЗЕЛЕНЫЙ. Иначе (Расход) -> КРАСНЫЙ.
-                        if raw_type_val == "1":
+                        if row_type == "1":
                             color_matrix.at[idx, col] = STYLE_GREEN
                         else:
                             color_matrix.at[idx, col] = STYLE_RED
                     elif delta < 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                        # Если тип равен 1 (Доход) -> КРАСНЫЙ. Иначе (Расход) -> ЗЕЛЕНЫЙ.
-                        if raw_type_val == "1":
+                        if row_type == "1":
                             color_matrix.at[idx, col] = STYLE_RED
                         else:
                             color_matrix.at[idx, col] = STYLE_GREEN
@@ -186,8 +185,10 @@ if file_1 and file_2:
             
             for idx, row in df_result.iterrows():
                 bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
-                r_type = str(row[type_column]).split('.')[0].strip()
-                type_label = "Доход" if r_type == "1" else "Расход"
+                
+                # ИСПРАВЛЕНО И ТУТ: Безопасный маркер типа для подписи в печатной форме
+                r_type_num = clean_to_float(row[type_column])
+                type_label = "Доход" if r_type_num == 1.0 else "Расход"
                 
                 html_preview += f"<tr style='background: {bg_row}; border-bottom: 1px solid #E5E7EB;'>\n"
                 html_preview += f"<td style='padding: 6px;'><b>{row[target_column]}</b></td>\n"
@@ -197,3 +198,4 @@ if file_1 and file_2:
                     cell_text = str(row[col])
                     cell_style_raw = color_matrix.at[idx, col]
                     
+                    extra_style = f" {cell_style_raw}" if cell_style_raw else ""
