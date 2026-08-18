@@ -144,11 +144,11 @@ if file_1 and file_2:
                     
                     if delta > 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                        # ЕСЛИ РОСТ ДОХОДОВ (1) -> ЗЕЛЕНЫЙ. ЕСЛИ РОСТ РАСХОДОВ (2) -> КРАСНЫЙ.
+                        # РОСТ ДОХОДОВ (1) -> ЗЕЛЕНЫЙ. РОСТ РАСХОДОВ (2) -> КРАСНЫЙ.
                         color_matrix.at[idx, col] = STYLE_GREEN if row_type == "1" else STYLE_RED
                     elif delta < 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                        # ЕСЛИ ПАДЕНИЕ ДОХОДОВ (1) -> КРАСНЫЙ. ЕСЛИ ПАДЕНИЕ РАСХОДОВ (2) -> ЗЕЛЕНЫЙ.
+                        # ПАДЕНИЕ ДОХОДОВ (1) -> КРАСНЫЙ. ПАДЕНИЕ РАСХОДОВ (2) -> ЗЕЛЕНЫЙ.
                         color_matrix.at[idx, col] = STYLE_RED if row_type == "1" else STYLE_GREEN
                     else:
                         df_result.at[idx, col] = f"{val_2_float:,.2f}"
@@ -187,10 +187,12 @@ if file_1 and file_2:
                 
                 for col in numeric_cols:
                     cell_text = str(row[col])
-                    cell_style = "padding: 6px; text-align: right;"
                     
-                    # ПРЯМАЯ И ПОНЯТНАЯ ЛОГИКА ЦВЕТОВ ДЛЯ HTML-ТАБЛИЦЫ ВО ИЗБЕЖАНИЕ СБОЕВ
-                    if "(+" in cell_text:
-                        if r_type == "1":
-                            cell_style += " background-color: #D1FAE5; color: #065F46;" # Рост Дохода = Зеленый
-                        else:
+                    # ПЛОСКИЙ РАСЧЕТ ЦВЕТА: Извлекаем стиль из готовой color_matrix, созданной для верхней таблицы
+                    cell_style_raw = color_matrix.at[idx, col]
+                    cell_style = "padding: 6px; text-align: right;"
+                    if cell_style_raw:
+                        cell_style += f" {cell_style_raw}"
+                        
+                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>\n"
+                html_preview += "</tr>\n"
