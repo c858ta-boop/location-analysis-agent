@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+from openpyxl.styles import PatternFill
 from io import BytesIO
 
 st.set_page_config(page_title="Сокращенный анализ локации", layout="wide")
@@ -159,17 +160,51 @@ if file_1 and file_2:
             
             st.subheader("📊 Результаты сравнительного анализа локации")
             st.write("Цветовая индикация адаптирована под экономику ДЦ: рост доходов и падение расходов подсвечены **зеленым**, падение доходов и рост расходов — **красным**.")
-            
-            # Отображаем основную интерактивную и полностью покрашенную таблицу
             st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
             
-            # 🖨️ НОВЫЙ НАДЁЖНЫЙ БЛОК ПЕЧАТИ
             st.write("---")
-            st.subheader("🖨️ Экспорт всего отчета в PDF")
-            st.write("Вы можете распечатать или сохранить всю полученную выше таблицу со всеми её цветами и изменениями.")
+            st.subheader("📥 Экспорт результатов в цветной Excel")
+            st.write("Скачайте готовый отчет. Агент автоматически раскрасит ячейки доходов и расходов внутри файла Excel.")
             
-            # Добавляем скрипт, который вызывает системную печать браузера по клику на кнопку
-            st.button("📄 Запустить печать отчета (или сохранить как PDF)", on_click=st.write, args=("💡 Нажмите Ctrl+P или Cmd+P на клавиатуре, чтобы открыть системный диалог сохранения в PDF.",))
+            # 🎨 ЛОГИКА ЦВЕТНОЙ СБОРКИ EXCEL ЧЕРЕЗ OPENPYXL
+            towrite = BytesIO()
             
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
+            # Сначала пишем базовый файл через pandas
+            df_result.to_excel(towrite, index=False, header=True)
+            towrite.seek(0)
+            
+            # Открываем созданный файл в openpyxl для раскраски ячеек
+            wb_export = openpyxl.load_workbook(towrite)
+            ws_export = wb_export.active
+            
+            # Создаем заливки для Excel (используем мягкие пастельные тона)
+            excel_fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+            excel_fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+            
+            # Пробегаемся по строкам файла Excel (строка 1 — заголовки, данные со 2-й)
+            for r_idx in range(2, ws_export.max_row + 1):
+                # Нам нужно понять, какой тип у этой строки ("1" или "2")
+                # Столбец "Доходы Расходы" — второй по счету в df_result (индекс 2 в Excel)
+                type_val_cell = ws_export.cell(row=r_idx, column=2).value
+                t_str = str(type_val_cell).strip().lower()
+                row_is_income = "1" in t_str or "доход" in t_str
+                
+                # Проверяем числовые столбцы (начиная с 3-го столбца таблицы Excel)
+                for c_idx in range(3, ws_export.max_column + 1):
+                    cell_obj = ws_export.cell(row=r_idx, column=c_idx)
+                    cell_text = str(cell_obj.value)
+                    
+                    if "(+" in cell_text:
+                        cell_obj.fill = excel_fill_green if row_is_income else excel_fill_red
+                    elif "(-" in cell_text:
+                        cell_obj.fill = excel_fill_red if row_is_income else excel_fill_green
+            
+            # Сохраняем разукрашенную книгу обратно в байты
+            final_output = BytesIO()
+            wb_export.save(final_output)
+            final_output.seek(0)
+            
+            st.download_button(
+                label="🟢 Скачать цветной отчет локации (Excel)",
+                data=final_output,
+                file_name="Location_Analysis_Color_Report.xlsx",
