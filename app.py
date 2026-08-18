@@ -189,7 +189,8 @@ if file_1 and file_2:
                     cell_text = str(row[col])
                     cell_style = "padding: 6px; text-align: right;"
                     
+                    # ПРЯМАЯ И ПОНЯТНАЯ ЛОГИКА ЦВЕТОВ ДЛЯ HTML-ТАБЛИЦЫ ВО ИЗБЕЖАНИЕ СБОЕВ
                     if "(+" in cell_text:
-                        # Исправлено: РОСТ ДОХОДОВ (1) -> ЗЕЛЕНЫЙ, РОСТ РАСХОДОВ (2) -> КРАСНЫЙ
-                        cell_style += " background-color: #D1FAE5; color: #065F46;" if r_type == "1" else " background-color: #FEE2E2; color: #991B1B;"
-                    elif "(-" in cell_text:
+                        if r_type == "1":
+                            cell_style += " background-color: #D1FAE5; color: #065F46;" # Рост Дохода = Зеленый
+                        else:
