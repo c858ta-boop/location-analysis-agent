@@ -126,9 +126,9 @@ if file_1 and file_2:
             for idx, row in df_result_raw.iterrows():
                 statya = row[target_column]
                 
-                # ИСПРАВЛЕНО: Безопасное приведение к числу. Сначала чистим в float, затем берем как строку "1" или "2"
-                row_type_num = clean_to_float(row[type_column])
-                row_type = "1" if row_type_num == 1.0 else "2"
+                # Текстовый поиск маркера
+                raw_type_str = str(row[type_column]).strip().lower()
+                is_income = "1" in raw_type_str or "доход" in raw_type_str
                 
                 for col in numeric_cols:
                     val_2 = row[col]
@@ -147,16 +147,10 @@ if file_1 and file_2:
                     
                     if delta > 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                        if row_type == "1":
-                            color_matrix.at[idx, col] = STYLE_GREEN
-                        else:
-                            color_matrix.at[idx, col] = STYLE_RED
+                        color_matrix.at[idx, col] = STYLE_GREEN if is_income else STYLE_RED
                     elif delta < 0:
                         df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                        if row_type == "1":
-                            color_matrix.at[idx, col] = STYLE_RED
-                        else:
-                            color_matrix.at[idx, col] = STYLE_GREEN
+                        color_matrix.at[idx, col] = STYLE_RED if is_income else STYLE_GREEN
                     else:
                         df_result.at[idx, col] = f"{val_2_float:,.2f}"
             
@@ -172,30 +166,38 @@ if file_1 and file_2:
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            html_preview = "<div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #E5E7EB; border-radius: 5px; background: white;'>\n"
-            html_preview += "<h2 style='color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0;'>Сокращенный анализ локации (Бизнес-отчет)</h2>\n"
-            html_preview += "<table style='width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px;'>\n"
-            
-            html_preview += "<tr style='background: #1E3A8A; color: white;'>\n"
-            html_preview += f"<th style='padding: 6px; text-align: left;'>{target_column}</th>\n"
-            html_preview += "<th style='padding: 6px; text-align: center;'>Тип</th>\n"
-            for col in numeric_cols:
-                html_preview += f"<th style='padding: 6px; text-align: right;'>{col}</th>\n"
-            html_preview += "</tr>\n"
-            
-            for idx, row in df_result.iterrows():
-                bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
+            try:
+                # НАДЕЖНЫЙ СБОР HTML: Разделяем стили и f-строку, чтобы фигурные скобки CSS не ломали вывод
+                html_preview = "<html><head><meta charset='utf-8'><style>"
+                html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
+                html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
+                html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
+                html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
+                html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
+                html_preview += "</style></head><body>"
                 
-                # ИСПРАВЛЕНО И ТУТ: Безопасный маркер типа для подписи в печатной форме
-                r_type_num = clean_to_float(row[type_column])
-                type_label = "Доход" if r_type_num == 1.0 else "Расход"
+                html_preview += "<div style='background: white;'>"
+                html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
+                html_preview += "<table>"
                 
-                html_preview += f"<tr style='background: {bg_row}; border-bottom: 1px solid #E5E7EB;'>\n"
-                html_preview += f"<td style='padding: 6px;'><b>{row[target_column]}</b></td>\n"
-                html_preview += f"<td style='padding: 6px; text-align: center; color: #6B7280;'>{type_label}</td>\n"
-                
+                # Шапка таблицы
+                html_preview += "<tr>"
+                html_preview += f"<th>{target_column}</th>"
+                html_preview += "<th style='text-align: center;'>Тип</th>"
                 for col in numeric_cols:
-                    cell_text = str(row[col])
-                    cell_style_raw = color_matrix.at[idx, col]
+                    html_preview += f"<th style='text-align: right;'>{col}</th>"
+                html_preview += "</tr>"
+                
+                # Строки таблицы
+                for idx, row in df_result.iterrows():
+                    bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
                     
-                    extra_style = f" {cell_style_raw}" if cell_style_raw else ""
+                    t_str = str(row[type_column]).strip().lower()
+                    type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
+                    
+                    html_preview += f"<tr style='background: {bg_row};'>"
+                    html_preview += f"<td><b>{row[target_column]}</b></td>"
+                    html_preview += f"<td style='text-align: center; color: #6B7280;'>{type_label}</td>"
+                    
+                    for col in numeric_cols:
+                        cell_text = str(row[col])
