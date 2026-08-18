@@ -12,7 +12,7 @@ st.write("Сравнение таблиц на листах 'АФ сокр' из
 with st.sidebar:
     st.header("⚙️ Настройки структуры")
     target_column = st.text_input("Название столбца со статьями:", value="Статья")
-    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
+    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=4)
     st.caption("ℹ️ Агент найдет столбец 'Статья' на листе 'АФ сокр', сопоставит все ячейки и подсветит отклонения.")
 
 # Блок загрузки файлов
