@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-import openpyxl
 from io import BytesIO
-from openpyxl.styles import PatternFill
 
 st.set_page_config(page_title="Сокращенный анализ локации", layout="wide")
 
@@ -24,38 +22,6 @@ with col1:
 with col2:
     file_2 = st.file_uploader("📂 Загрузите файл 2 (Текущий период / Отчет)", type=["xlsx"])
 
-def is_colored(cell):
-    """Проверяет, есть ли у ячейки цветная заливка"""
-    if cell and cell.fill and cell.fill.fill_type:
-        color = cell.fill.start_color.index
-        if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
-            return True
-    return False
-
-def get_colored_rows(file_bytes, sheet_name, header_idx, target_col_name):
-    """Быстро находит строки с цветовой заливкой с защитой от пустых ячеек"""
-    colored_rows = set()
-    try:
-        wb = openpyxl.load_workbook(file_bytes, data_only=True)
-        if sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            target_col_idx = None
-            
-            for col in range(1, ws.max_column + 1):
-                cell_val = ws.cell(row=header_idx, column=col).value
-                if cell_val is not None and str(cell_val).strip() == target_col_name:
-                    target_col_idx = col
-                    break
-                    
-            if target_col_idx:
-                for row_idx in range(header_idx + 1, ws.max_row + 1):
-                    cell = ws.cell(row=row_idx, column=target_col_idx)
-                    if cell and cell.value is not None and is_colored(cell):
-                        colored_rows.add(row_idx - header_idx - 1)
-    except:
-        pass
-    return colored_rows
-
 def clean_to_float(val):
     """Всеядная функция для приведения ячеек к числу с плавающей точкой"""
     if pd.isna(val) or val is None:
@@ -68,45 +34,6 @@ def clean_to_float(val):
         return float(val_str)
     except:
         return 0.0
-
-def make_color_excel(df, numeric_cols_list, type_col_name):
-    """Генерация разукрашенного Excel"""
-    towrite = BytesIO()
-    df.to_excel(towrite, index=False, header=True)
-    towrite.seek(0)
-    
-    wb_export = openpyxl.load_workbook(towrite)
-    ws_export = wb_export.active
-    
-    excel_fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
-    excel_fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
-    
-    type_col_idx = 2
-    for col in range(1, ws_export.max_column + 1):
-        if str(ws_export.cell(row=1, column=col).value).strip() == type_col_name:
-            type_col_idx = col
-            break
-            
-    for r_idx in range(2, ws_export.max_row + 1):
-        type_val_cell = ws_export.cell(row=r_idx, column=type_col_idx).value
-        t_str = str(type_val_cell).strip().lower()
-        row_is_income = "1" in t_str or "доход" in t_str
-        
-        for c_idx in range(1, ws_export.max_column + 1):
-            col_name = str(ws_export.cell(row=1, column=c_idx).value).strip()
-            if col_name in numeric_cols_list:
-                cell_obj = ws_export.cell(row=r_idx, column=c_idx)
-                cell_text = str(cell_obj.value)
-                
-                if "(+" in cell_text:
-                    ws_export.cell(row=r_idx, column=c_idx).fill = excel_fill_green if row_is_income else excel_fill_red
-                elif "(-" in cell_text:
-                    ws_export.cell(row=r_idx, column=c_idx).fill = excel_fill_red if row_is_income else excel_fill_green
-                    
-    final_output = BytesIO()
-    wb_export.save(final_output)
-    final_output.seek(0)
-    return final_output
 
 # Основная логика приложения
 if file_1 and file_2:
@@ -203,13 +130,64 @@ if file_1 and file_2:
             st.write("Цветовая индикация адаптирована под экономику ДЦ: рост доходов и падение расходов подсвечены **зеленым**, падение доходов и рост расходов — **красным**.")
             st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
             
+            # Построение вывода печатной формы прямо на экран (как в первом агенте, без try-except)
             st.write("---")
-            st.subheader("📥 Экспорт результатов в цветной Excel")
-            st.write("Скачайте готовый отчет. Агент автоматически раскрасит ячейки доходов и расходов внутри файла Excel.")
+            st.subheader("🖨️ Печать и экспорт в PDF")
+            st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            excel_file_data = make_color_excel(df_result, numeric_cols, type_column)
+            # Линейная генерация красивой HTML формы без двойных фигурных скобок CSS
+            html_preview = "<html><head><meta charset='utf-8'><style>"
+            html_preview += "body { font-family: Arial, sans-serif; margin: 20px; color: #333; }"
+            html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
+            html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
+            html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
+            html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
+            html_preview += "</style></head><body>"
+            
+            html_preview += "<div style='background: white;'>"
+            html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
+            html_preview += "<table><tr>"
+            html_preview += f"<th>{target_column}</th><th style='text-align: center;'>Тип</th>"
+            for col in numeric_cols:
+                html_preview += f"<th>{col}</th>"
+            html_preview += "</tr>"
+            
+            for idx, row in df_result.iterrows():
+                bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
+                t_str = str(row[type_column]).strip().lower()
+                type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
+                
+                html_preview += f"<tr style='background: {bg_row};'>"
+                html_preview += f"<td><b>{row[target_column]}</b></td>"
+                html_preview += f"<td style='text-align: center; color: #6B7280;'>{type_label}</td>"
+                
+                for col in numeric_cols:
+                    cell_text = str(row[col])
+                    cell_style_raw = color_matrix.at[idx, col]
+                    
+                    # Безопасный плоский однострочник стилей
+                    extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
+                    cell_style = f"text-align: right;{extra_style}"
+                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>"
+                    
+                html_preview += "</tr>"
+                
+            html_preview += "</table></div></body></html>"
+            
+            st.components.v1.html(html_preview, height=500, scrolling=True)
+            
+            st.write("---")
+            st.subheader("📥 Выгрузка в Excel (Стандарт)")
+            
+            towrite = BytesIO()
+            df_result.to_excel(towrite, index=False, header=True)
+            towrite.seek(0)
             
             st.download_button(
-                label="🟢 Скачать цветной отчет локации (Excel)",
-                data=excel_file_data,
-                file_name="Location_Analysis_Color_Report.xlsx",
+                label="🟢 Скачать итоговый анализ (Excel)",
+                data=towrite,
+                file_name="Location_Analysis_Report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+else:
+    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
