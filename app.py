@@ -124,7 +124,6 @@ if file_1 and file_2:
     clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
     clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
     
-    # 🧠 УМНЫЙ МУЛЬТИ-ПОИСК: Ищем сначала "аф сокр", а если его нет — переключаемся на "новая форма расходов"
     sheet_1_real_name = None
     sheet_2_real_name = None
     
@@ -138,7 +137,7 @@ if file_1 and file_2:
         st.error("❌ Ошибка: Целевой лист ('АФ сокр' или 'Новая форма расходов') не найден в одном или обоих файлах!")
         with st.expander("🔍 Посмотреть названия вкладок в ваших файлах"):
             st.write("**Листы в Файле 1:**", xl_1.sheet_names)
-            st.write("**Листы in Файле 2:**", xl_2.sheet_names)
+            st.write("**Листы в Файле 2:**", xl_2.sheet_names)
     else:
         df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1_real_name, header=pandas_header_index)
         df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2_real_name, header=pandas_header_index)
@@ -213,3 +212,4 @@ if file_1 and file_2:
             st.download_button(
                 label="🟢 Скачать цветной отчет локации (Excel)",
                 data=excel_file_data,
+                file_name="Location_Analysis_Color_Report.xlsx",
