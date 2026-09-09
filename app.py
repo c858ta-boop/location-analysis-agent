@@ -12,15 +12,28 @@ with st.sidebar:
     st.header("⚙️ Настройки структуры")
     target_column = st.text_input("Название столбца со статьями:", value="Статья")
     type_column = st.text_input("Название столбца типа (Доходы/Расходы):", value="Доходы Расходы")
-    st.caption("ℹ️ Агент автоматически найдет строку с заголовками на листе, сопоставит ячейки и подсветит отклонения.")
+    st.caption("ℹ️ Агент автоматически найдет строку с заголовками на листе в пределах 50 строк, сопоставит ячейки и подсветит отклонения.")
 
 # Блок загрузки файлов
 file_1 = st.file_uploader("📂 Загрузите файл 1 (Прошлый период / База)", type=["xlsx"])
 file_2 = st.file_uploader("📂 Загрузите файл 2 (Текущий период / Отчет)", type=["xlsx"])
 
-# Запуск основного интерфейса только при наличии обоих файлов
+def clean_to_float(val):
+    """Всеядная функция для приведения ячеек к числу с плавающей точкой"""
+    if pd.isna(val) or val is None:
+        return 0.0
+    val_str = str(val).strip()
+    if val_str == "" or val_str == "-":
+        return 0.0
+    try:
+        val_str = val_str.replace('\xa0', '').replace(' ', '').replace(',', '.')
+        return float(val_str)
+    except:
+        return 0.0
+
+# Основная логика приложения
 if file_1 and file_2:
-    st.success("Файлы успешно загружены! Начинаю умный поиск структуры...")
+    st.success("Файлы успешно загружены! Начинаю глубокий поиск структуры...")
     
     old_bytes = file_1.read()
     new_bytes = file_2.read()
@@ -45,18 +58,29 @@ if file_1 and file_2:
     
     if sheet_1 and sheet_2:
         detected_header_idx = None
-        for r in range(12):
+        target_col_lower = str(target_column).strip().lower()
+        
+        # 🔥 УВЕЛИЧИВАЕМ ГЛУБИНУ: Сканируем первые 50 строк листа в поисках заголовка
+        for r in range(50):
             try:
-                df_test = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2, header=r, nrows=2)
-                cleaned_cols = [str(c).strip() for c in df_test.columns]
-                if target_column in cleaned_cols:
+                df_test = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2, header=r, nrows=1)
+                # Принудительно приводим все найденные имена столбцов к нижнему регистру для слепого поиска
+                cleaned_cols = [str(c).strip().lower() for c in df_test.columns]
+                
+                if target_col_lower in cleaned_cols:
                     detected_header_idx = r
+                    
+                    # Переопределяем точное имя столбца, как его прочитал Pandas на этой строке
+                    for original_col in df_test.columns:
+                        if str(original_col).strip().lower() == target_col_lower:
+                            target_column = str(original_col)
+                            break
                     break
             except:
                 pass
                 
         if detected_header_idx is None:
-            st.error(f"❌ Столбец '{target_column}' не найден в первых 12 строках на листе '{sheet_2}'. Проверьте точное написание заголовка.")
+            st.error(f"❌ Столбец '{target_column}' не найден в первых 50 строках на листе '{sheet_2}'. Проверьте точное написание заголовка или выберите другой лист.")
         
         if detected_header_idx is not None:
             st.info(f"⚙️ Структура определена автоматически. Заголовки найдены на строке {detected_header_idx + 1}. Запускаю расчеты...")
@@ -67,6 +91,13 @@ if file_1 and file_2:
             df_1.columns = [str(c).strip() for c in df_1.columns]
             df_2.columns = [str(c).strip() for c in df_2.columns]
             
+            # Находим точное имя столбца типа (регистронезависимо)
+            type_column_lower = str(type_column).strip().lower()
+            for original_col in df_2.columns:
+                if str(original_col).strip().lower() == type_column_lower:
+                    type_column = str(original_col)
+                    break
+                    
             if type_column not in df_2.columns:
                 st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Доступные столбцы: {list(df_2.columns)}")
             else:
@@ -103,7 +134,6 @@ if file_1 and file_2:
                         except KeyError:
                             val_1 = 0.0
                             
-                        # Словесная очистка ячеек
                         if pd.isna(val_2) or val_2 is None: val_2_float = 0.0
                         else:
                             try: val_2_float = float(str(val_2).strip().replace('\xa0', '').replace(' ', '').replace(',', '.'))
@@ -136,7 +166,6 @@ if file_1 and file_2:
                 st.subheader("🖨️ Печать и экспорт в PDF")
                 st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
                 
-                # СБОР HTML ЧЕРЕЗ СТАНДАРТНОЕ БЕЗОПАСНОЕ СЛОЖЕНИЕ СТРОК (БЕЗ F-СТРОК С СИМВОЛОМ 'F')
                 html_preview = "<html><head><meta charset='utf-8'><style>"
                 html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
                 html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
@@ -154,24 +183,3 @@ if file_1 and file_2:
                 
                 for idx, row in df_result.iterrows():
                     bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
-                    t_str = str(row[type_column]).strip().lower()
-                    type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
-                    
-                    html_preview += "<tr style='background: " + str(bg_row) + ";'>"
-                    html_preview += "<td><b>" + str(row[target_column]) + "</b></td>"
-                    html_preview += "<td style='text-align: center; color: #6B7280;'>" + str(type_label) + "</td>"
-                    
-                    for col in numeric_cols:
-                        cell_text = str(row[col])
-                        cell_style_raw = color_matrix.at[idx, col]
-                        extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
-                        cell_style = "text-align: right;" + str(extra_style)
-                        html_preview += "<td style='" + str(cell_style) + "'>" + str(cell_text) + "</td>"
-                        
-                    html_preview += "</tr>"
-                    
-                html_preview += "</table></div></body></html>"
-                
-                st.components.v1.html(html_preview, height=500, scrolling=True)
-                
-                st.write("---")
