@@ -81,7 +81,6 @@ def make_color_excel(df, numeric_cols_list, type_col_name):
     excel_fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
     excel_fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
     
-    # Находим, в каком столбце Excel лежит маркер "Доходы Расходы"
     type_col_idx = 2
     for col in range(1, ws_export.max_column + 1):
         if str(ws_export.cell(row=1, column=col).value).strip() == type_col_name:
@@ -114,7 +113,6 @@ if file_1 and file_2:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
     
     pandas_header_index = int(header_row) - 1
-    sheet_target = "АФ сокр"
     
     old_bytes = file_1.read()
     new_bytes = file_2.read()
@@ -122,17 +120,33 @@ if file_1 and file_2:
     xl_1 = pd.ExcelFile(BytesIO(old_bytes))
     xl_2 = pd.ExcelFile(BytesIO(new_bytes))
     
-    if sheet_target not in xl_1.sheet_names or sheet_target not in xl_2.sheet_names:
-        st.error(f"❌ Ошибка: Лист '{sheet_target}' не найден в одном или обоих файлах!")
+    # УМНОЕ РАСПОЗНАВАНИЕ: Очищаем оригинальные имена листов от невидимых пробелов и приводим к нижнему регистру
+    clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
+    clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
+    
+    target_clean_name = "аф сокр" # Целевое имя в нижнем регистре
+    
+    if target_clean_name not in clean_sheets_1 or target_clean_name not in clean_sheets_2:
+        st.error(f"❌ Ошибка: Лист 'АФ сокр' не найден в одном или обоих файлах!")
+        
+        # Показываем директору, какие листы ИИ реально нашёл в файлах, чтобы выявить опечатку
+        with st.expander("🔍 Посмотреть реальные названия вкладок в ваших файлах"):
+            st.write("**Листы в Файле 1:**", xl_1.sheet_names)
+            st.write("**Листы в Файле 2:**", xl_2.sheet_names)
+            st.info("💡 Подсказка: Если вы видите в списке имя вроде 'АФ сокр ', значит в конце названия закрался невидимый пробел.")
     else:
-        df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_target, header=pandas_header_index)
-        df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_target, header=pandas_header_index)
+        # Извлекаем оригинальные названия листов, которые соответствуют нашему правилу
+        sheet_1_real_name = clean_sheets_1[target_clean_name]
+        sheet_2_real_name = clean_sheets_2[target_clean_name]
+        
+        df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1_real_name, header=pandas_header_index)
+        df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2_real_name, header=pandas_header_index)
         
         df_1.columns = [str(c).strip() for c in df_1.columns]
         df_2.columns = [str(c).strip() for c in df_2.columns]
         
         if target_column not in df_1.columns or target_column not in df_2.columns:
-            st.error(f"❌ Столбец '{target_column}' не найден на листе '{sheet_target}'. Проверьте настройки в боковом меню.")
+            st.error(f"❌ Столбец '{target_column}' не найден на листе. Проверьте настройки в боковом меню.")
         elif type_column not in df_2.columns:
             st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Проверьте заголовки.")
         else:
@@ -193,14 +207,5 @@ if file_1 and file_2:
             st.subheader("📥 Экспорт результатов в цветной Excel")
             st.write("Скачайте готовый отчет. Агент автоматически раскрасит ячейки доходов и расходов внутри файла Excel.")
             
-            # Безопасный вызов изолированной функции генерации Excel
             excel_file_data = make_color_excel(df_result, numeric_cols, type_column)
             
-            st.download_button(
-                label="🟢 Скачать цветной отчет локации (Excel)",
-                data=excel_file_data,
-                file_name="Location_Analysis_Color_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
