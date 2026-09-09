@@ -63,6 +63,44 @@ def find_header_row_and_sheets(old_bytes, new_bytes, target_col):
             
     return sheet_1_name, sheet_2_name, detected_header_idx, xl_1.sheet_names, xl_2.sheet_names
 
+def generate_html_report(df, numeric_cols, target_col_name, type_col_name, color_df):
+    """Изолированная генерация HTML без f-строк во избежание конфликта скобок"""
+    html = "<html><head><meta charset='utf-8'><style>"
+    html += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
+    html += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
+    html += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
+    html += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
+    html += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
+    html += "</style></head><body>"
+    html += "<div style='background: white;'>"
+    html += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
+    html += "<table><tr>"
+    html += "<th>" + str(target_col_name) + "</th><th style='text-align: center;'>Тип</th>"
+    for col in numeric_cols:
+        html += "<th>" + str(col) + "</th>"
+    html += "</tr>"
+    
+    for idx, row in df.iterrows():
+        bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
+        t_str = str(row[type_col_name]).strip().lower()
+        type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
+        
+        html += "<tr style='background: " + str(bg_row) + ";'>"
+        html += "<td><b>" + str(row[target_col_name]) + "</b></td>"
+        html += "<td style='text-align: center; color: #6B7280;'>" + str(type_label) + "</td>"
+        
+        for col in numeric_cols:
+            cell_text = str(row[col])
+            cell_style_raw = color_df.at[idx, col]
+            extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
+            cell_style = "text-align: right;" + str(extra_style)
+            html += "<td style='" + str(cell_style) + "'>" + str(cell_text) + "</td>"
+            
+        html += "</tr>"
+        
+    html += "</table></div></body></html>"
+    return html
+
 # Основная логика приложения
 if file_1 and file_2:
     st.success("Файлы успешно загружены! Начинаю умный поиск структуры...")
@@ -148,44 +186,9 @@ if file_1 and file_2:
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            # ЧИСТОЕ СЛОЖЕНИЕ СТРОК БЕЗ ИСПОЛЬЗОВАНИЯ F-СТРОК С ЦЕЛЬЮ ЗАЩИТЫ ОТ SYNTAXERROR
-            html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
-            html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
-            html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
-            html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
-            html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
-            html_preview += "</style></head><body>"
-            
-            html_preview += "<div style='background: white;'>"
-            html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
-            html_preview += "<table><tr>"
-            html_preview += "<th>" + str(target_column) + "</th><th style='text-align: center;'>Тип</th>"
-            for col in numeric_cols:
-                html_preview += "<th>" + str(col) + "</th>"
-            html_preview += "</tr>"
-            
-            for idx, row in df_result.iterrows():
-                bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
-                t_str = str(row[type_column]).strip().lower()
-                type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
-                
-                html_preview += "<tr style='background: " + str(bg_row) + ";'>"
-                html_preview += "<td><b>" + str(row[target_column]) + "</b></td>"
-                html_preview += "<td style='text-align: center; color: #6B7280;'>" + str(type_label) + "</td>"
-                
-                for col in numeric_cols:
-                    cell_text = str(row[col])
-                    cell_style_raw = color_matrix.at[idx, col]
-                    extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
-                    cell_style = "text-align: right;" + str(extra_style)
-                    html_preview += "<td style='" + str(cell_style) + "'>" + str(cell_text) + "</td>"
-                    
-                html_preview += "</tr>"
-                
-            html_preview += "</table></div></body></html>"
-            
-            st.components.v1.html(html_preview, height=500, scrolling=True)
+            # Вызов безопасной изолированной функции HTML
+            html_preview_data = generate_html_report(df_result, numeric_cols, target_column, type_column, color_matrix)
+            st.components.v1.html(html_preview_data, height=500, scrolling=True)
             
             st.write("---")
             st.subheader("📥 Выгрузка в Excel (Стандарт)")
@@ -195,3 +198,6 @@ if file_1 and file_2:
             towrite.seek(0)
             
             st.download_button(
+                label="🟢 Скачать итоговый анализ (Excel)",
+                data=towrite,
+                file_name="Location_Analysis_Report.xlsx",
