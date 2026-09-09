@@ -50,7 +50,6 @@ def find_header_row_and_sheets(old_bytes, new_bytes, target_col):
     if not sheet_1_name or not sheet_2_name:
         return None, None, None, xl_1.sheet_names, xl_2.sheet_names
         
-    # Сканируем первые 12 строк, чтобы автоматически найти, где лежит заголовок
     detected_header_idx = None
     for r in range(12):
         try:
@@ -121,7 +120,7 @@ if file_1 and file_2:
                     try:
                         val_1 = df_1_indexed.loc[statya, col]
                         if isinstance(val_1, pd.Series):
-                            val_1 = val_1.iloc[0]
+                            val_1 = val_1.iloc
                     except KeyError:
                         val_1 = 0.0
                         
@@ -149,6 +148,7 @@ if file_1 and file_2:
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
+            # ЧИСТОЕ СЛОЖЕНИЕ СТРОК БЕЗ ИСПОЛЬЗОВАНИЯ F-СТРОК С ЦЕЛЬЮ ЗАЩИТЫ ОТ SYNTAXERROR
             html_preview = "<html><head><meta charset='utf-8'><style>"
             html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
             html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
@@ -160,9 +160,9 @@ if file_1 and file_2:
             html_preview += "<div style='background: white;'>"
             html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
             html_preview += "<table><tr>"
-            html_preview += f"<th>{target_column}</th><th style='text-align: center;'>Тип</th>"
+            html_preview += "<th>" + str(target_column) + "</th><th style='text-align: center;'>Тип</th>"
             for col in numeric_cols:
-                html_preview += f"<th>{col}</th>"
+                html_preview += "<th>" + str(col) + "</th>"
             html_preview += "</tr>"
             
             for idx, row in df_result.iterrows():
@@ -170,21 +170,21 @@ if file_1 and file_2:
                 t_str = str(row[type_column]).strip().lower()
                 type_label = "Доход" if ("1" in t_str or "доход" in t_str) else "Расход"
                 
-                html_preview += f"<tr style='background: {bg_row};'>"
-                html_preview += f"<td><b>{row[target_column]}</b></td>"
-                html_preview += f"<td style='text-align: center; color: #6B7280;'>{type_label}</td>"
+                html_preview += "<tr style='background: " + str(bg_row) + ";'>"
+                html_preview += "<td><b>" + str(row[target_column]) + "</b></td>"
+                html_preview += "<td style='text-align: center; color: #6B7280;'>" + str(type_label) + "</td>"
                 
                 for col in numeric_cols:
                     cell_text = str(row[col])
                     cell_style_raw = color_matrix.at[idx, col]
-                    
                     extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
-                    cell_style = f"text-align: right;{extra_style}"
-                    html_preview += f"<td style='{cell_style}'>{cell_text}</td>"
+                    cell_style = "text-align: right;" + str(extra_style)
+                    html_preview += "<td style='" + str(cell_style) + "'>" + str(cell_text) + "</td>"
                     
                 html_preview += "</tr>"
                 
             html_preview += "</table></div></body></html>"
+            
             st.components.v1.html(html_preview, height=500, scrolling=True)
             
             st.write("---")
@@ -195,5 +195,3 @@ if file_1 and file_2:
             towrite.seek(0)
             
             st.download_button(
-                label="🟢 Скачать итоговый анализ (Excel)",
-                data=towrite,
