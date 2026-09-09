@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import openpyxl
+from openpyxl.styles import PatternFill
 from io import BytesIO
 
 st.set_page_config(page_title="Сокращенный анализ локации", layout="wide")
@@ -34,6 +36,40 @@ def clean_to_float(val):
     except:
         return 0.0
 
+def save_xlsx_with_colors(df, numeric_cols_list):
+    """Изолированная функция генерации и покраски файла Excel перед скачиванием"""
+    output = BytesIO()
+    # Записываем стандартный Excel
+    df.to_excel(output, index=False, header=True)
+    output.seek(0)
+    
+    # Открываем его через openpyxl для наложения директорских цветов
+    wb = openpyxl.load_workbook(output)
+    ws = wb.active
+    
+    # Пастельные цвета для Excel (Зеленый и Розовый/Красный)
+    fill_green = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+    fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    
+    # Сканируем ячейки (строка 1 — шапка, данные со 2-й строки)
+    for r_idx in range(2, ws.max_row + 1):
+        for c_idx in range(1, ws.max_column + 1):
+            col_name = str(ws.cell(row=1, column=c_idx).value).strip()
+            # Красим только те столбцы, которые были числовыми и содержат расчет дельты
+            if col_name in numeric_cols_list:
+                cell = ws.cell(row=r_idx, column=c_idx)
+                cell_text = str(cell.value)
+                
+                if "(+" in cell_text:
+                    cell.fill = fill_green
+                elif "(-" in cell_text:
+                    cell.fill = fill_red
+                    
+    final_output = BytesIO()
+    wb.save(final_output)
+    final_output.seek(0)
+    return final_output.getvalue()
+
 # Запуск основного интерфейса только при наличии обоих файлов
 if file_1 and file_2:
     st.success("Файлы успешно загружены! Начинаю факторный анализ...")
@@ -47,7 +83,7 @@ if file_1 and file_2:
         bytes_2 = file_2.read()
         
         xl_1 = pd.ExcelFile(BytesIO(bytes_1))
-        xl_2 = pd.ExcelFile(BytesIO(new_bytes_1)) if 'new_bytes_1' in locals() else pd.ExcelFile(BytesIO(bytes_2))
+        xl_2 = pd.ExcelFile(BytesIO(bytes_2))
         
         if sheet_target not in xl_1.sheet_names or sheet_target not in xl_2.sheet_names:
             st.error(f"❌ Ошибка: Лист '{sheet_target}' не найден в одном или обоих файлах!")
@@ -84,7 +120,7 @@ if file_1 and file_2:
                 # Матрица цветов для отображения в Streamlit
                 color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
                 
-                # Константы стилей для ячеек
+                # Константы стилей для ячеек экрана
                 STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
                 STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
                 
@@ -98,7 +134,7 @@ if file_1 and file_2:
                         try:
                             val_1 = df_1_indexed.loc[statya, col]
                             if isinstance(val_1, pd.Series):
-                                val_1 = val_1.iloc[0]
+                                val_1 = val_1.iloc
                         except KeyError:
                             val_1 = 0.0
                             
@@ -125,15 +161,15 @@ if file_1 and file_2:
                 
                 st.write("---")
                 st.subheader("📥 Экспорт результатов")
+                st.write("Нажмите кнопку ниже, чтобы скачать готовый файл Excel с сохраненными зелеными и розовыми цветами изменений.")
                 
-                towrite = BytesIO()
-                df_result.to_excel(towrite, index=False, header=True)
-                towrite.seek(0)
+                # Вызываем безопасную функцию генерации цветного файла
+                colored_excel_bytes = save_xlsx_with_colors(df_result, numeric_cols)
                 
                 st.download_button(
-                    label="🟢 Скачать итоговый анализ (Excel)",
-                    data=towrite,
-                    file_name="Location_Analysis_Report.xlsx",
+                    label="🟢 Скачать цветной отчет (Excel)",
+                    data=colored_excel_bytes,
+                    file_name="Location_Analysis_Color_Report.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
                 
