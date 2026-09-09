@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
-from openpyxl.styles import PatternFill
 from io import BytesIO
+from openpyxl.styles import PatternFill
 
 st.set_page_config(page_title="Сокращенный анализ локации", layout="wide")
 
 st.title("🚗 ИИ-Агент: Сокращенный анализ локации")
-st.write("Сравнение таблиц на листах 'АФ сокр' из двух отчетов с умной бизнес-подсветкой доходов и расходов.")
+st.write("Сравнение таблиц из двух отчетов с умной бизнес-подсветкой доходов и расходов.")
 
 # Панель настроек в боковой панели
 with st.sidebar:
@@ -70,7 +70,7 @@ def clean_to_float(val):
         return 0.0
 
 def make_color_excel(df, numeric_cols_list, type_col_name):
-    """Отдельная функция для генерации разукрашенного Excel во избежание SyntaxError"""
+    """Генерация разукрашенного Excel"""
     towrite = BytesIO()
     df.to_excel(towrite, index=False, header=True)
     towrite.seek(0)
@@ -99,9 +99,9 @@ def make_color_excel(df, numeric_cols_list, type_col_name):
                 cell_text = str(cell_obj.value)
                 
                 if "(+" in cell_text:
-                    cell_obj.fill = excel_fill_green if row_is_income else excel_fill_red
+                    ws_export.cell(row=r_idx, column=c_idx).fill = excel_fill_green if row_is_income else excel_fill_red
                 elif "(-" in cell_text:
-                    cell_obj.fill = excel_fill_red if row_is_income else excel_fill_green
+                    ws_export.cell(row=r_idx, column=c_idx).fill = excel_fill_red if row_is_income else excel_fill_green
                     
     final_output = BytesIO()
     wb_export.save(final_output)
@@ -120,25 +120,26 @@ if file_1 and file_2:
     xl_1 = pd.ExcelFile(BytesIO(old_bytes))
     xl_2 = pd.ExcelFile(BytesIO(new_bytes))
     
-    # УМНОЕ РАСПОЗНАВАНИЕ: Очищаем оригинальные имена листов от невидимых пробелов и приводим к нижнему регистру
+    # Создаем карту очищенных имен листов
     clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
     clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
     
-    target_clean_name = "аф сокр" # Целевое имя в нижнем регистре
+    # 🧠 УМНЫЙ МУЛЬТИ-ПОИСК: Ищем сначала "аф сокр", а если его нет — переключаемся на "новая форма расходов"
+    sheet_1_real_name = None
+    sheet_2_real_name = None
     
-    if target_clean_name not in clean_sheets_1 or target_clean_name not in clean_sheets_2:
-        st.error(f"❌ Ошибка: Лист 'АФ сокр' не найден в одном или обоих файлах!")
-        
-        # Показываем директору, какие листы ИИ реально нашёл в файлах, чтобы выявить опечатку
-        with st.expander("🔍 Посмотреть реальные названия вкладок в ваших файлах"):
+    for possible_name in ["аф сокр", "новая форма расходов"]:
+        if possible_name in clean_sheets_1:
+            sheet_1_real_name = clean_sheets_1[possible_name]
+        if possible_name in clean_sheets_2:
+            sheet_2_real_name = clean_sheets_2[possible_name]
+            
+    if not sheet_1_real_name or not sheet_2_real_name:
+        st.error("❌ Ошибка: Целевой лист ('АФ сокр' или 'Новая форма расходов') не найден в одном или обоих файлах!")
+        with st.expander("🔍 Посмотреть названия вкладок в ваших файлах"):
             st.write("**Листы в Файле 1:**", xl_1.sheet_names)
-            st.write("**Листы в Файле 2:**", xl_2.sheet_names)
-            st.info("💡 Подсказка: Если вы видите в списке имя вроде 'АФ сокр ', значит в конце названия закрался невидимый пробел.")
+            st.write("**Листы in Файле 2:**", xl_2.sheet_names)
     else:
-        # Извлекаем оригинальные названия листов, которые соответствуют нашему правилу
-        sheet_1_real_name = clean_sheets_1[target_clean_name]
-        sheet_2_real_name = clean_sheets_2[target_clean_name]
-        
         df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1_real_name, header=pandas_header_index)
         df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2_real_name, header=pandas_header_index)
         
@@ -209,3 +210,6 @@ if file_1 and file_2:
             
             excel_file_data = make_color_excel(df_result, numeric_cols, type_column)
             
+            st.download_button(
+                label="🟢 Скачать цветной отчет локации (Excel)",
+                data=excel_file_data,
