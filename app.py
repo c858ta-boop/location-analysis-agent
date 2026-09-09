@@ -1,185 +1,232 @@
 import streamlit as st
 import pandas as pd
+import openpyxl
 from io import BytesIO
 
-st.set_page_config(page_title="Сокращенный анализ локации", layout="wide")
+# Импорты для генерации PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
-st.title("🚗 ИИ-Агент: Сокращенный анализ локации")
-st.write("Сравнение таблиц из двух отчетов с умной бизнес-подсветкой доходов и расходов.")
+st.set_page_config(page_title="Финансовый ИИ-Агент", layout="wide")
+
+st.title("🚗 Финансовый Автономный Агент Дилерского Центра")
+st.write("Анализ влияния первичных статей расходов (исключая цветные суммирующие строки отделов) на общий бюджет.")
 
 # Панель настроек в боковой панели
 with st.sidebar:
-    st.header("⚙️ Настройки структуры")
-    target_column = st.text_input("Название столбца со статьями:", value="Статья")
-    type_column = st.text_input("Название столбца типа (Доходы/Расходы):", value="Доходы Расходы")
-    st.caption("ℹ️ Агент автоматически найдет строку с заголовками на листе в пределах 50 строк, сопоставит ячейки и подсветит отклонения.")
+    st.header("⚙️ Настройки анализа")
+    target_column = st.text_input("Название столбца со статьями расходов:", value="Статья расходов")
+    value_column = st.text_input("Название столбца со значениями (суммами):", value="Всего расходы")
+    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=2)
+    total_row_name = st.text_input("Название строки общего итога:", value="Всего по ДЦ")
+    st.caption("ℹ️ Алгоритм автоматически исключает из ТОП-10 строки, имеющие цветовую заливку.")
 
 # Блок загрузки файлов
-file_1 = st.file_uploader("📂 Загрузите файл 1 (Прошлый период / База)", type=["xlsx"])
-file_2 = st.file_uploader("📂 Загрузите файл 2 (Текущий период / Отчет)", type=["xlsx"])
+col1, col2 = st.columns(2)
+with col1:
+    old_file = st.file_uploader("📂 Загрузите СТАРЫЙ отчет (прошлый месяц)", type=["xlsx"])
+with col2:
+    new_file = st.file_uploader("📂 Загрузите НОВЫЙ отчет (текущий месяц)", type=["xlsx"])
 
-def clean_to_float(val):
-    """Всеядная функция для приведения ячеек к числу с плавающей точкой"""
-    if pd.isna(val) or val is None:
-        return 0.0
-    val_str = str(val).strip()
-    if val_str == "" or val_str == "-":
-        return 0.0
-    try:
-        val_str = val_str.replace('\xa0', '').replace(' ', '').replace(',', '.')
-        return float(val_str)
-    except:
-        return 0.0
+def is_colored(cell):
+    """Проверяет, есть ли у ячейки цветная заливка (игнорирует белый/прозрачный)"""
+    if cell.fill and cell.fill.fill_type:
+        color = cell.fill.start_color.index
+        if color and str(color) not in ['00000000', '0', 'FFFFFFFF', 'System_Color_Window']:
+            return True
+    return False
 
-# Основная логика приложения
-if file_1 and file_2:
-    st.success("Файлы успешно загружены! Начинаю глубокий поиск структуры...")
+def generate_pdf(total_old, total_new, delta, df_top10):
+    """Генерирует PDF-отчет в оперативной памяти"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    story = []
     
-    old_bytes = file_1.read()
-    new_bytes = file_2.read()
+    styles = getSampleStyleSheet()
     
-    xl_1 = pd.ExcelFile(BytesIO(old_bytes))
-    xl_2 = pd.ExcelFile(BytesIO(new_bytes))
+    title_style = ParagraphStyle(
+        'PDFTitle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        spaceAfter=15,
+        textColor=colors.HexColor('#1E3A8A')
+    )
     
-    clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
-    clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
+    text_style = ParagraphStyle(
+        'PDFText',
+        parent=styles['Normal'],
+        fontSize=11,
+        spaceAfter=10
+    )
     
-    sheet_1 = None
-    sheet_2 = None
-    for possible_name in ["аф сокр", "новая форма расходов"]:
-        if possible_name in clean_sheets_1: sheet_1 = clean_sheets_1[possible_name]
-        if possible_name in clean_sheets_2: sheet_2 = clean_sheets_2[possible_name]
+    story.append(Paragraph("<b>Финансовый отчет Дилерского Центра</b>", title_style))
+    story.append(Paragraph("Факторный анализ изменений в статьях расходов", text_style))
+    story.append(Spacer(1, 15))
+    
+    story.append(Paragraph("<b>Общие финансовые результаты по ДЦ:</b>", styles['Heading2']))
+    story.append(Paragraph(f"Расходы за прошлый месяц: {total_old:,.2f} руб.", text_style))
+    story.append(Paragraph(f"Расходы за текущий месяц: {total_new:,.2f} руб.", text_style))
+    story.append(Paragraph(f"Общее изменение расходов ДЦ: {delta:+,.2f} руб.", text_style))
+    story.append(Spacer(1, 15))
+    
+    story.append(Paragraph("<b>ТОП-10 главных изменений в статьях расходов:</b>", styles['Heading2']))
+    story.append(Spacer(1, 5))
+    
+    table_data = [['№', 'Лист', 'Статья расходов', 'Было (руб.)', 'Стало (руб.)', 'Изменение', 'Доля в ДЦ']]
+    
+    for idx, row in df_top10.iterrows():
+        table_data.append([
+            str(idx),
+            str(row['Лист']),
+            str(row['Статья расходов']),
+            f"{row['Было (руб.)']:,.2f}",
+            f"{row['Стало (руб.)']:,.2f}",
+            f"{row['Изменение (руб.)']:+,.2f}",
+            f"{row['Доля во влиянии на общую разницу']:.2f}%"
+        ])
         
-    if not sheet_1 or not sheet_2:
-        st.error("❌ Ошибка: Целевой лист ('АФ сокр' или 'Новая форма расходов') не найден в одном или обоих файлах!")
-        with st.expander("🔍 Посмотреть названия вкладок в ваших файлах"):
-            st.write("**Листы в Файле 1:**", xl_1.sheet_names)
-            st.write("**Листы в Файле 2:**", xl_2.sheet_names)
+    pdf_table = Table(table_data)
     
-    if sheet_1 and sheet_2:
-        detected_header_idx = None
-        target_col_lower = str(target_column).strip().lower()
+    pdf_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+    ]))
+    
+    story.append(pdf_table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def parse_and_analyze():
+    """Основная функция логики приложения"""
+    wb_old = openpyxl.load_workbook(old_file, data_only=True)
+    wb_new = openpyxl.load_workbook(new_file, data_only=True)
+    
+    common_sheets = list(set(wb_old.sheetnames).intersection(set(wb_new.sheetnames)))
+    
+    if not common_sheets:
+        st.error("❌ Ошибка: В файлах нет листов с одинаковыми названиями!")
+        return
         
-        # 🔥 УВЕЛИЧИВАЕМ ГЛУБИНУ: Сканируем первые 50 строк листа в поисках заголовка
-        for r in range(50):
-            try:
-                df_test = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2, header=r, nrows=1)
-                # Принудительно приводим все найденные имена столбцов к нижнему регистру для слепого поиска
-                cleaned_cols = [str(c).strip().lower() for c in df_test.columns]
-                
-                if target_col_lower in cleaned_cols:
-                    detected_header_idx = r
-                    
-                    # Переопределяем точное имя столбца, как его прочитал Pandas на этой строке
-                    for original_col in df_test.columns:
-                        if str(original_col).strip().lower() == target_col_lower:
-                            target_column = str(original_col)
-                            break
-                    break
-            except:
-                pass
-                
-        if detected_header_idx is None:
-            st.error(f"❌ Столбец '{target_column}' не найден в первых 50 строках на листе '{sheet_2}'. Проверьте точное написание заголовка или выберите другой лист.")
+    all_expenses_changes = []
+    total_old_dc = 0.0
+    total_new_dc = 0.0
+    total_row_found = False
+    header_idx = int(header_row)
+    
+    for sheet_name in common_sheets:
+        ws_old = wb_old[sheet_name]
+        ws_new = wb_new[sheet_name]
         
-        if detected_header_idx is not None:
-            st.info(f"⚙️ Структура определена автоматически. Заголовки найдены на строке {detected_header_idx + 1}. Запускаю расчеты...")
+        target_col_idx_old, value_col_idx_old = None, None
+        target_col_idx_new, value_col_idx_new = None, None
+        
+        for col in range(1, ws_old.max_column + 1):
+            val = str(ws_old.cell(row=header_idx, column=col).value).strip()
+            if val == target_column: target_col_idx_old = col
+            if val == value_column: value_col_idx_old = col
+                
+        for col in range(1, ws_new.max_column + 1):
+            val = str(ws_new.cell(row=header_idx, column=col).value).strip()
+            if val == target_column: target_col_idx_new = col
+            if val == value_column: value_col_idx_new = col
+        
+        if target_col_idx_old and value_col_idx_old and target_col_idx_new and value_col_idx_new:
+            dict_old = {}
+            for r in range(header_idx + 1, ws_old.max_row + 1):
+                cell_art = ws_old.cell(row=r, column=target_col_idx_old)
+                cell_val = ws_old.cell(row=r, column=value_col_idx_old)
+                if cell_art.value is not None:
+                    art_str = str(cell_art.value).strip()
+                    if art_str.lower() == total_row_name.lower().strip():
+                        try: total_old_dc += float(cell_val.value or 0)
+                        except: pass
+                        total_row_found = True
+                        continue
+                    if is_colored(cell_art):
+                        continue
+                    dict_old[art_str] = cell_val.value
+
+            dict_new = {}
+            for r in range(header_idx + 1, ws_new.max_row + 1):
+                cell_art = ws_new.cell(row=r, column=target_col_idx_new)
+                cell_val = ws_new.cell(row=r, column=value_col_idx_new)
+                if cell_art.value is not None:
+                    art_str = str(cell_art.value).strip()
+                    if art_str.lower() == total_row_name.lower().strip():
+                        try: total_new_dc += float(cell_val.value or 0)
+                        except: pass
+                        continue
+                    if is_colored(cell_art):
+                        continue
+                    dict_new[art_str] = cell_val.value
             
-            df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1, header=detected_header_idx)
-            df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2, header=detected_header_idx)
-            
-            df_1.columns = [str(c).strip() for c in df_1.columns]
-            df_2.columns = [str(c).strip() for c in df_2.columns]
-            
-            # Находим точное имя столбца типа (регистронезависимо)
-            type_column_lower = str(type_column).strip().lower()
-            for original_col in df_2.columns:
-                if str(original_col).strip().lower() == type_column_lower:
-                    type_column = str(original_col)
-                    break
-                    
-            if type_column not in df_2.columns:
-                st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Доступные столбцы: {list(df_2.columns)}")
-            else:
-                df_1 = df_1.dropna(subset=[target_column])
-                df_2 = df_2.dropna(subset=[target_column])
-                df_1[target_column] = df_1[target_column].astype(str).str.strip()
-                df_2[target_column] = df_2[target_column].astype(str).str.strip()
+            sheet_articles = set(dict_old.keys()).union(set(dict_new.keys()))
+            for article in sheet_articles:
+                if article == "" or any(word in article.lower() for word in ["итого", "всего", "баланс", "результат", "свод"]):
+                    continue
+                try: val_old = float(dict_old.get(article, 0) or 0)
+                except: val_old = 0.0
+                try: val_new = float(dict_new.get(article, 0) or 0)
+                except: val_new = 0.0
                 
-                numeric_cols = [col for col in df_2.columns if col != target_column and col != type_column and col in df_1.columns and not str(col).startswith('Unnamed:')]
+                item_delta = val_new - val_old
+                abs_delta = abs(item_delta)
                 
-                df_result_raw = df_2[[target_column, type_column] + numeric_cols].copy()
-                df_result = df_result_raw.copy()
-                
-                for col in numeric_cols:
-                    df_result[col] = df_result[col].astype(object)
-                    
-                df_1_indexed = df_1.set_index(target_column)
-                color_matrix = pd.DataFrame('', index=df_result.index, columns=df_result.columns)
-                
-                STYLE_GREEN = 'background-color: #D1FAE5; color: #065F46;' 
-                STYLE_RED = 'background-color: #FEE2E2; color: #991B1B;'   
-                
-                for idx, row in df_result_raw.iterrows():
-                    statya = row[target_column]
-                    raw_type_str = str(row[type_column]).strip().lower()
-                    is_income = "1" in raw_type_str or "доход" in raw_type_str
-                    
-                    for col in numeric_cols:
-                        val_2 = row[col]
-                        try:
-                            val_1 = df_1_indexed.loc[statya, col]
-                            if isinstance(val_1, pd.Series):
-                                val_1 = val_1.iloc
-                        except KeyError:
-                            val_1 = 0.0
-                            
-                        if pd.isna(val_2) or val_2 is None: val_2_float = 0.0
-                        else:
-                            try: val_2_float = float(str(val_2).strip().replace('\xa0', '').replace(' ', '').replace(',', '.'))
-                            except: val_2_float = 0.0
-                            
-                        if pd.isna(val_1) or val_1 is None: val_1_float = 0.0
-                        else:
-                            try: val_1_float = float(str(val_1).strip().replace('\xa0', '').replace(' ', '').replace(',', '.'))
-                            except: val_1_float = 0.0
-                        
-                        delta = val_2_float - val_1_float
-                        
-                        if delta > 0:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f} (+{delta:,.2f})"
-                            color_matrix.at[idx, col] = STYLE_GREEN if is_income else STYLE_RED
-                        elif delta < 0:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f} (-{abs(delta):,.2f})"
-                            color_matrix.at[idx, col] = STYLE_RED if is_income else STYLE_GREEN
-                        else:
-                            df_result.at[idx, col] = f"{val_2_float:,.2f}"
-                
-                def style_cells(df):
-                    return color_matrix
-                
-                st.subheader("📊 Результаты сравнительного анализа локации")
-                st.write("Цветовая индикация адаптирована под экономику ДЦ: рост доходов и падение расходов подсвечены **зеленым**, падение доходов и рост расходов — **красным**.")
-                st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
-                
-                st.write("---")
-                st.subheader("🖨️ Печать и экспорт в PDF")
-                st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
-                
-                html_preview = "<html><head><meta charset='utf-8'><style>"
-                html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
-                html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
-                html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
-                html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
-                html_preview += "td { padding: 6px; border-bottom: 1px solid #E5E7EB; }"
-                html_preview += "</style></head><body>"
-                html_preview += "<div style='background: white;'>"
-                html_preview += "<h2 style='margin-bottom:15px;'>Сокращенный анализ локации (Бизнес-отчет)</h2>"
-                html_preview += "<table><tr>"
-                html_preview += "<th>" + str(target_column) + "</th><th style='text-align: center;'>Тип</th>"
-                for col in numeric_cols:
-                    html_preview += "<th>" + str(col) + "</th>"
-                html_preview += "</tr>"
-                
-                for idx, row in df_result.iterrows():
-                    bg_row = "#F9FAFB" if idx % 2 == 0 else "#FFFFFF"
+                if abs_delta > 0:
+                    all_expenses_changes.append({
+                        "Лист": sheet_name,
+                        "Статья расходов": article,
+                        "Было (руб.)": val_old,
+                        "Стало (руб.)": val_new,
+                        "Изменение (руб.)": item_delta,
+                        "Абсолютное влияние (руб.)": abs_delta
+                    })
+    
+    dc_delta = total_new_dc - total_old_dc
+    
+    st.subheader("📊 Общий финансовый результат по ДЦ")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Расходы за прошлый месяц", f"{total_old_dc:,.2f} руб.")
+    with c2:
+        st.metric("Расходы за текущий месяц", f"{total_new_dc:,.2f} руб.")
+    with c3:
+        st.metric("Общее изменение расходов ДЦ", f"{dc_delta:+,.2f} руб.", delta_color="inverse")
+        
+    if not total_row_found:
+        st.warning(f"⚠️ Строка '{total_row_name}' не найдена в файлах.")
+    
+    if all_expenses_changes:
+        df_total_changes = pd.DataFrame(all_expenses_changes)
+        top_10_changes = df_total_changes.sort_values(by="Абсолютное влияние (руб.)", ascending=False).head(10)
+        
+        if total_old_dc > 0:
+            top_10_changes["Доля во влиянии на общую разницу"] = top_10_changes["Изменение (руб.)"] / total_old_dc * 100
+        else:
+            top_10_changes["Доля во влиянии на общую разницу"] = 0.0
+        
+        top_10_display = top_10_changes.drop(columns=["Абсолютное влияние (руб.)"], errors='ignore').reset_index(drop=True)
+        top_10_display.index = top_10_display.index + 1
+        
+        st.subheader("📋 Директорский отчет: ТОП-10 чистых статей расходов")
+        st.write("Суммирующие строки отделов отфильтрованы по цвету заливки. Показываются только прямые статьи расходов:")
+        
+        # Упрощенный вывод без сложных стилей, чтобы избежать багов разметки
+        st.dataframe(top_10_display, use_container_width=True)
+        
+        st.write("---")
+        st.subheader("📥 Экспорт результатов")
+        
+        pdf_data = generate_pdf(total_old_dc, total_new_dc, dc_delta, top_10_display)
+        st.download_button(
+            label="📄 Скачать директорский отчет в PDF",
+            data=pdf_data,
+            file_name="Director_Financial_Report.pdf",
