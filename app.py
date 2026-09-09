@@ -12,8 +12,7 @@ with st.sidebar:
     st.header("⚙️ Настройки структуры")
     target_column = st.text_input("Название столбца со статьями:", value="Статья")
     type_column = st.text_input("Название столбца типа (Доходы/Расходы):", value="Доходы Расходы")
-    header_row = st.number_input("Строка с заголовками (в Excel нумерация с 1):", min_value=1, value=4)
-    st.caption("ℹ️ Код 1 = Доходы (Рост=Зеленый, Падение=Красный). Код 2 = Расходы (Рост=Красный, Падение=Зеленый).")
+    st.caption("ℹ️ Агент автоматически найдет строку с заголовками на листе, сопоставит ячейки и подсветит отклонения.")
 
 # Блок загрузки файлов
 col1, col2 = st.columns(2)
@@ -35,47 +34,63 @@ def clean_to_float(val):
     except:
         return 0.0
 
+def find_header_row_and_sheets(old_bytes, new_bytes, target_col):
+    """Умный поиск строки заголовков и выбор правильного листа"""
+    xl_1 = pd.ExcelFile(BytesIO(old_bytes))
+    xl_2 = pd.ExcelFile(BytesIO(new_bytes))
+    
+    clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
+    clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
+    
+    sheet_1_name, sheet_2_name = None, None
+    for possible_name in ["аф сокр", "новая форма расходов"]:
+        if possible_name in clean_sheets_1: sheet_1_name = clean_sheets_1[possible_name]
+        if possible_name in clean_sheets_2: sheet_2_name = clean_sheets_2[possible_name]
+        
+    if not sheet_1_name or not sheet_2_name:
+        return None, None, None, xl_1.sheet_names, xl_2.sheet_names
+        
+    # Сканируем первые 12 строк, чтобы автоматически найти, где лежит заголовок
+    detected_header_idx = None
+    for r in range(12):
+        try:
+            df_test = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2_name, header=r, nrows=2)
+            cleaned_cols = [str(c).strip() for c in df_test.columns]
+            if target_col in cleaned_cols:
+                detected_header_idx = r
+                break
+        except:
+            pass
+            
+    return sheet_1_name, sheet_2_name, detected_header_idx, xl_1.sheet_names, xl_2.sheet_names
+
 # Основная логика приложения
 if file_1 and file_2:
-    st.success("Файлы успешно загружены! Начинаю факторный анализ...")
-    
-    pandas_header_index = int(header_row) - 1
+    st.success("Файлы успешно загружены! Начинаю умный поиск структуры...")
     
     old_bytes = file_1.read()
     new_bytes = file_2.read()
     
-    xl_1 = pd.ExcelFile(BytesIO(old_bytes))
-    xl_2 = pd.ExcelFile(BytesIO(new_bytes))
+    sheet_1, sheet_2, header_idx, sheets_1_all, sheets_2_all = find_header_row_and_sheets(old_bytes, new_bytes, target_column)
     
-    # Создаем карту очищенных имен листов
-    clean_sheets_1 = {str(name).strip().lower(): name for name in xl_1.sheet_names}
-    clean_sheets_2 = {str(name).strip().lower(): name for name in xl_2.sheet_names}
-    
-    sheet_1_real_name = None
-    sheet_2_real_name = None
-    
-    for possible_name in ["аф сокр", "новая форма расходов"]:
-        if possible_name in clean_sheets_1:
-            sheet_1_real_name = clean_sheets_1[possible_name]
-        if possible_name in clean_sheets_2:
-            sheet_2_real_name = clean_sheets_2[possible_name]
-            
-    if not sheet_1_real_name or not sheet_2_real_name:
+    if not sheet_1 or not sheet_2:
         st.error("❌ Ошибка: Целевой лист ('АФ сокр' или 'Новая форма расходов') не найден в одном или обоих файлах!")
         with st.expander("🔍 Посмотреть названия вкладок в ваших файлах"):
-            st.write("**Листы в Файле 1:**", xl_1.sheet_names)
-            st.write("**Листы в Файле 2:**", xl_2.sheet_names)
+            st.write("**Листы в Файле 1:**", sheets_1_all)
+            st.write("**Листы в Файле 2:**", sheets_2_all)
+    elif header_idx is None:
+        st.error(f"❌ Столбец '{target_column}' не найден в первых 12 строках на листе '{sheet_2}'. Проверьте точное написание заголовка.")
     else:
-        df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1_real_name, header=pandas_header_index)
-        df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2_real_name, header=pandas_header_index)
+        st.info(f"⚙️ Структура определена автоматически. Заголовки найдены на строке {header_idx + 1}. Запускаю расчеты...")
+        
+        df_1 = pd.read_excel(BytesIO(old_bytes), sheet_name=sheet_1, header=header_idx)
+        df_2 = pd.read_excel(BytesIO(new_bytes), sheet_name=sheet_2, header=header_idx)
         
         df_1.columns = [str(c).strip() for c in df_1.columns]
         df_2.columns = [str(c).strip() for c in df_2.columns]
         
-        if target_column not in df_1.columns or target_column not in df_2.columns:
-            st.error(f"❌ Столбец '{target_column}' не найден на листе. Проверьте настройки в боковом меню.")
-        elif type_column not in df_2.columns:
-            st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Проверьте заголовки.")
+        if type_column not in df_2.columns:
+            st.error(f"❌ Столбец типа '{type_column}' не найден в новом файле. Доступные столбцы: {list(df_2.columns)}")
         else:
             df_1 = df_1.dropna(subset=[target_column])
             df_2 = df_2.dropna(subset=[target_column])
@@ -106,7 +121,7 @@ if file_1 and file_2:
                     try:
                         val_1 = df_1_indexed.loc[statya, col]
                         if isinstance(val_1, pd.Series):
-                            val_1 = val_1.iloc
+                            val_1 = val_1.iloc[0]
                     except KeyError:
                         val_1 = 0.0
                         
@@ -130,14 +145,12 @@ if file_1 and file_2:
             st.write("Цветовая индикация адаптирована под экономику ДЦ: рост доходов и падение расходов подсвечены **зеленым**, падение доходов и рост расходов — **красным**.")
             st.dataframe(df_result.style.apply(style_cells, axis=None), use_container_width=True)
             
-            # Построение вывода печатной формы прямо на экран (как в первом агенте, без try-except)
             st.write("---")
             st.subheader("🖨️ Печать и экспорт в PDF")
             st.write("Нажмите комбинацию клавиш **Ctrl + P** (или **Cmd + P** на Mac) прямо на этой странице браузера, чтобы сохранить этот отчет в PDF.")
             
-            # Линейная генерация красивой HTML формы без двойных фигурных скобок CSS
             html_preview = "<html><head><meta charset='utf-8'><style>"
-            html_preview += "body { font-family: Arial, sans-serif; margin: 20px; color: #333; }"
+            html_preview += "body { font-family: Arial, sans-serif; padding: 20px; color: #333; }"
             html_preview += "h2 { color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 8px; font-size: 18px; margin-top:0; }"
             html_preview += "table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }"
             html_preview += "th { background: #1E3A8A; color: white; padding: 6px; text-align: left; }"
@@ -165,7 +178,6 @@ if file_1 and file_2:
                     cell_text = str(row[col])
                     cell_style_raw = color_matrix.at[idx, col]
                     
-                    # Безопасный плоский однострочник стилей
                     extra_style = " " + str(cell_style_raw) if cell_style_raw else ""
                     cell_style = f"text-align: right;{extra_style}"
                     html_preview += f"<td style='{cell_style}'>{cell_text}</td>"
@@ -173,7 +185,6 @@ if file_1 and file_2:
                 html_preview += "</tr>"
                 
             html_preview += "</table></div></body></html>"
-            
             st.components.v1.html(html_preview, height=500, scrolling=True)
             
             st.write("---")
@@ -186,8 +197,3 @@ if file_1 and file_2:
             st.download_button(
                 label="🟢 Скачать итоговый анализ (Excel)",
                 data=towrite,
-                file_name="Location_Analysis_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-else:
-    st.info("Пожалуйста, загрузите оба Excel-файла для глубокого факторного анализа.")
